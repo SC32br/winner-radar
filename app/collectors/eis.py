@@ -26,15 +26,32 @@ SEARCH = f"{BASE}/epz/contract/search/results.html"
 CARD = f"{BASE}/epz/contract/contractCard/common-info.html"
 PARTS = f"{BASE}/epz/contract/contractCard/participants.html"
 DOCS = f"{BASE}/epz/contract/contractCard/document-info.html"
+JOURNAL = f"{BASE}/epz/contract/contractCard/event-journal.html"
+JOURNAL_LIST = f"{BASE}/epz/contract/card/event/journal/list.html"
 
 _REESTR = re.compile(r"reestrNumber=(\d{15,25})")
 _INN_QS = re.compile(r"[?&]inn=(\d{10,12})\b", re.I)
+_INN_LABEL = re.compile(r"ИНН[:\s]+(\d{10,12})", re.I)
 _TITLE_ATTR = re.compile(r'title="([^"]+)"')
 _TOOLTIP = re.compile(r"data-tooltip='([^']+)'")
 _FILESTORE = re.compile(
-    r'href="([^"]*filestore[^"]*)"[^>]*>([^<]{0,240})',
+    r'href="([^"]*(?:filestore|file\.html\?uid=)[^"]*)"[^>]*>([^<]{0,240})',
     re.I,
 )
+_SID = re.compile(r"sid\s*:\s*['\"](\d+)['\"]")
+_PRINTFORM = re.compile(
+    r'href="([^"]*printForm/view[^"]*)"[^>]*>([^<]{0,240})',
+    re.I,
+)
+_WINNER_MARK = (
+    "информаци о поставщик",
+    "информация о поставщик",
+    "сведения о поставщик",
+    "поставщик (подрядчик",
+    "информация об исполнител",
+)
+_ATTACH_CAP = 50
+_JOURNAL_CAP = 20
 
 
 def listing_url(
@@ -92,6 +109,8 @@ def parse_listing(html: str) -> list[ListingHit]:
         inn_m = _INN_QS.search(part)
         if inn_m:
             inn = normalize_inn(inn_m.group(1))
+        if not inn:
+            inn = inn_from_reestr(reestr)
         amount = None
         price_m = re.search(r"Цена контракта\s+(.+?)(?:Заключение|Срок|Размещен|$)", text)
         if price_m:
@@ -152,6 +171,54 @@ def _between(text: str, title: str, stops: tuple[str, ...], limit: int) -> str:
     return match.group(1).strip()[:limit]
 
 
+def inn_from_reestr(reestr: str) -> str | None:
+    """ИНН заказчика из реестрового номера 44-ФЗ: тип + 10 цифр ИНН + год + номер."""
+    digits = re.sub(r"\D", "", reestr or "")
+    if len(digits) < 11:
+        return None
+    return normalize_inn(digits[1:11])
+
+
+def _winner_slice(html: str) -> str:
+    """Кусок HTML про поставщика. Пусто, если заголовка нет — иначе можно схватить заказчика."""
+    low = (html or "").lower()
+    start = -1
+    for mark in _WINNER_MARK:
+        pos = low.find(mark)
+        if pos >= 0 and (start < 0 or pos < start):
+            start = pos
+    if start < 0:
+        return ""
+    return html[start : start + 12000]
+
+
+def _winner_name_from_cell(html: str) -> str:
+    match = re.search(r"tableBlock__col_first[^>]*>(.*?)</td>", html or "", re.S | re.I)
+    if not match:
+        return ""
+    name = strip_tags(match.group(1))
+    name = re.split(r"Код по ОКПО|ИНН[:\s]+|КПП[:\s]+", name, maxsplit=1)[0]
+    name = re.sub(r"\s+", " ", name).strip(" .,;")
+    if len(name) < 3:
+        return ""
+    return name[:400]
+
+
+def apply_winner(html: str, draft: LotDraft) -> LotDraft:
+    """Победитель из таблицы поставщика. Пустые поля только дополняет, не затирает."""
+    blob = _winner_slice(html)
+    if not blob:
+        return draft
+    text = strip_tags(blob)
+    inn_m = _INN_LABEL.search(text)
+    if inn_m:
+        inn = normalize_inn(inn_m.group(1))
+        if inn and inn != draft.customer_inn and not draft.winner_inn:
+            draft.winner_inn = inn
+    name = _winner_name_from_cell(blob)
+    if name and not (draft.winner_name or "").strip():
+        draft.winner_name = name
+    return draft
 
 
 def parse_card(html: str, hit: ListingHit) -> LotDraft:
@@ -178,6 +245,8 @@ def parse_card(html: str, hit: ListingHit) -> LotDraft:
         qs = _INN_QS.search(html)
         if qs:
             inn = normalize_inn(qs.group(1))
+    if not inn:
+        inn = inn_from_reestr(hit.external_id)
     amount = hit.amount_rub
     cost = re.search(r'class="cardMainInfo__content cost"[^>]*>(.*?)</span>', html, re.S)
     if cost:
@@ -214,6 +283,7 @@ def parse_card(html: str, hit: ListingHit) -> LotDraft:
         customer_inn=inn,
     )
     _add_contacts(draft, html, text, party="customer", source="eis_card")
+    apply_winner(html, draft)
     return draft
 
 
@@ -290,40 +360,82 @@ def _add_contacts(draft: LotDraft, html: str, text: str, *, party: str, source: 
 
 
 def parse_participants(html: str, draft: LotDraft) -> LotDraft:
+    apply_winner(html, draft)
     text = strip_tags(html)
-    inn_m = re.search(r"ИНН:\s*(\d{10,12})", text)
-    if inn_m:
-        draft.winner_inn = normalize_inn(inn_m.group(1))
-    name_m = re.search(
-        r"tableBlock__col_first[^>]*>(.*?)</td>",
-        html,
-        re.S,
-    )
-    if name_m:
-        name = strip_tags(name_m.group(1))
-        name = re.split(r"Код по ОКПО|ИНН:", name)[0].strip()
+    if not draft.winner_inn:
+        inn_m = _INN_LABEL.search(text) or re.search(r"ИНН:\s*(\d{10,12})", text)
+        if inn_m:
+            inn = normalize_inn(inn_m.group(1))
+            if inn and inn != draft.customer_inn:
+                draft.winner_inn = inn
+    if not (draft.winner_name or "").strip():
+        name = _winner_name_from_cell(html)
         if name:
-            draft.winner_name = name[:400]
+            draft.winner_name = name
     _add_contacts(draft, html, text, party="winner", source="eis_participants")
     return draft
 
 
-def parse_documents(html: str) -> list[AttachmentDraft]:
+def _file_url(href: str) -> str:
+    url = abs_url(BASE, href)
+    if "/44fz/" not in url and "/filestore/" in url:
+        url = url.replace("/filestore/", "/44fz/filestore/", 1)
+    return url
+
+
+def parse_documents(html: str, *, limit: int = 40) -> list[AttachmentDraft]:
     out: list[AttachmentDraft] = []
     seen: set[str] = set()
-    for href, label in _FILESTORE.findall(html):
-        url = abs_url(BASE, href)
-        if "/44fz/" not in url and "/filestore/" in url:
-            url = url.replace("/filestore/", "/44fz/filestore/", 1)
+    for href, label in _FILESTORE.findall(html or ""):
+        url = _file_url(href)
         if url in seen:
             continue
         seen.add(url)
         name = strip_tags(label).strip() or href.rsplit("/", 1)[-1]
         name = name[:200] or "файл"
         out.append(AttachmentDraft(url=url, filename=name))
-        if len(out) >= 40:
+        if len(out) >= limit:
             break
     return out
+
+
+def merge_attachments(
+    base: list[AttachmentDraft], extra: list[AttachmentDraft], *, cap: int = _ATTACH_CAP
+) -> list[AttachmentDraft]:
+    seen = {item.url for item in base}
+    out = list(base)
+    for item in extra:
+        if item.url in seen:
+            continue
+        seen.add(item.url)
+        out.append(item)
+        if len(out) >= cap:
+            break
+    return out
+
+
+def parse_journal_files(html: str, *, limit: int = _JOURNAL_CAP) -> list[AttachmentDraft]:
+    out = parse_documents(html or "", limit=limit)
+    if len(out) >= limit:
+        return out
+    seen = {item.url for item in out}
+    for href, label in _PRINTFORM.findall(html or ""):
+        url = abs_url(BASE, href)
+        if "javascript:" in url.lower() or url in seen:
+            continue
+        seen.add(url)
+        name = strip_tags(label).strip() or "печатная форма"
+        if not name.lower().endswith((".html", ".htm", ".pdf")):
+            name = f"{name[:160]}.html"
+        out.append(AttachmentDraft(url=url, filename=name[:200]))
+        if len(out) >= limit:
+            break
+    return out
+
+
+def extract_journal_sid(html: str) -> str | None:
+    match = _SID.search(html or "")
+    return match.group(1) if match else None
 
 
 class EisCollector:
@@ -372,8 +484,37 @@ class EisCollector:
         return draft
 
     def fetch_attachments(self, hit: ListingHit) -> list[AttachmentDraft]:
+        found: list[AttachmentDraft] = []
         try:
             html = self.http.get_text(DOCS, params={"reestrNumber": hit.external_id})
+            found = parse_documents(html)
+        except FetchError:
+            found = []
+        extra = self._journal_files(hit.external_id)
+        return merge_attachments(found, extra)
+
+    def _journal_files(self, reestr: str) -> list[AttachmentDraft]:
+        try:
+            wrap = self.http.get_text(JOURNAL, params={"reestrNumber": reestr})
         except FetchError:
             return []
-        return parse_documents(html)
+        sid = extract_journal_sid(wrap)
+        if not sid:
+            return parse_journal_files(wrap)
+        try:
+            listing = self.http.get_text(
+                JOURNAL_LIST,
+                params={
+                    "sid": sid,
+                    "number": "",
+                    "entityId": "",
+                    "defaultEntityTypes": "false",
+                    "page": "1",
+                    "pageSize": "100",
+                    "qualifier": "",
+                    "sorted": "false",
+                },
+            )
+        except FetchError:
+            return parse_journal_files(wrap)
+        return parse_journal_files(listing)

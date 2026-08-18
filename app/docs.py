@@ -29,7 +29,8 @@ CUSTOMER_HINTS = (
     "должностное лицо заказчика",
     "информация о заказчике",
 )
-_DISPOSITION = re.compile(r"filename\*?=(?:UTF-8''|\"?)([^;\"]+)", re.I)
+_DISPOSITION_STAR = re.compile(r"filename\*\s*=\s*([^']+)''([^;]+)", re.I)
+_DISPOSITION_PLAIN = re.compile(r'filename\s*=\s*"?([^";]+)"?', re.I)
 
 
 def _safe_name(raw: str) -> str:
@@ -39,9 +40,22 @@ def _safe_name(raw: str) -> str:
 
 
 def _filename_from_headers(headers: dict[str, str], fallback: str) -> str:
-    match = _DISPOSITION.search(headers.get("content-disposition") or "")
-    if match:
-        return _safe_name(unquote(match.group(1)))
+    cd = headers.get("content-disposition") or ""
+    starred = _DISPOSITION_STAR.search(cd)
+    if starred:
+        charset, value = starred.group(1).strip(), starred.group(2).strip().strip('"')
+        try:
+            return _safe_name(unquote(value, encoding=charset or "utf-8", errors="replace"))
+        except LookupError:
+            return _safe_name(unquote(value))
+    plain = _DISPOSITION_PLAIN.search(cd)
+    if plain:
+        raw = plain.group(1).strip()
+        try:
+            raw = raw.encode("latin-1").decode("utf-8")
+        except (UnicodeDecodeError, UnicodeEncodeError):
+            pass
+        return _safe_name(unquote(raw))
     return _safe_name(fallback)
 
 

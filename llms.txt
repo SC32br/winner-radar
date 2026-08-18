@@ -22,8 +22,11 @@ Gotchas (do not treat as exploit recipes):
 - Official SOAP needs ESIA/cert/token
 - HTML listing wants a normal browser User-Agent
 - Region filter is KLADR, not a bare subject code
-- Winner is on the contract card, not the AJAX results tab
+- Winner is on the contract card supplier table; the participants tab is optional
+- Customer INN can be taken from the 44-FZ registry number if the listing has no inn=
+- Extra files come from the contract event journal, not only the documents tab
 - File links must be taken from the page as full hrefs
+- HTTP client pauses on 403/captcha; live run had downloads, no captcha page
 - mos.ru JSON does not cover Russian regions
 - Checko ~100/day; DaData ~1000/day and no phones on the cheap tariff
 
