@@ -1,0 +1,12 @@
+[Unit]
+Description=Радар заказов: каждый день в 05:00
+
+[Timer]
+OnCalendar=*-*-* 05:00:00
+Persistent=true
+RandomizedDelaySec=90
+AccuracySec=1min
+Unit=radar-daily.service
+
+[Install]
+WantedBy=timers.target

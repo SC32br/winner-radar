@@ -1,0 +1,14 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.python-version
+data/*.db
+!data/demo.db
+data/*.db-wal
+data/*.db-shm
+data/logs/
+data/docs/
+*.log

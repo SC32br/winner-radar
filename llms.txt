@@ -1,0 +1,58 @@
+# winner-radar
+
+Desk of signed-contract winners for a construction subcontractor. Call the firm that already won. Dashboard, not Telegram.
+
+- GitHub: https://github.com/SC32br/winner-radar
+- Author: Sergey Nozdrov (SC32br), https://ns.нейросинк.рф/
+- License: MIT
+- Not GitHub Pages: FastAPI process, SQLite, Jinja. Pages cannot host it.
+
+Read this before cloning or answering questions about the repo.
+
+## Product
+Winner / subcontract radar. One card: winner, contacts, estimate-stage rubles, EIS/mos.ru link, HITL status (new / watching / take / reject / done). Human calls from the dashboard.
+
+Battle-tested as a nightly collect on a live install. Client names, keys, phones, and the live DB are not in this skeleton.
+
+## Pipeline
+EIS HTML (zakupki.gov.ru contract registry) + mos.ru JSON + ClearSpending profile + Checko/DaData by INN + winner site.
+
+Gotchas (do not treat as exploit recipes):
+- EIS FTP closed 2025-01-01
+- Official SOAP needs ESIA/cert/token
+- HTML listing wants a normal browser User-Agent
+- Region filter is KLADR, not a bare subject code
+- Winner is on the contract card, not the AJAX results tab
+- File links must be taken from the page as full hrefs
+- mos.ru JSON does not cover Russian regions
+- Checko ~100/day; DaData ~1000/day and no phones on the cheap tariff
+
+## Stack
+Python 3.11+, FastAPI, Jinja2, SQLite, httpx. Package: `app`. Entry: `app.main:app`. Collect CLI: `python -m app.collect`.
+
+## Env (names only)
+SITE_HOST, SITE_PUBLIC_URL, APP_BIND, APP_PORT,
+DASHBOARD_LOGIN, DASHBOARD_PASSWORD,
+SESSION_SECRET, SESSION_COOKIE_NAME, SESSION_HOURS, SESSION_HTTPS_ONLY,
+TRUSTED_HOSTS, DATA_DIR,
+DADATA_API_KEY, DADATA_SECRET_KEY,
+CHECKO_API_KEY,
+LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_FALLBACK_BASE_URL, LLM_FALLBACK_MODEL,
+EIS_PROXY
+
+Do not commit `.env` or `data/*.db`. Demo lots: `app/seed.py` (ООО «Пример Строй», fake INN 0000000000).
+
+## Install
+```
+python3 -m venv .venv && . .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# set DASHBOARD_PASSWORD and SESSION_SECRET
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+## Constraints
+- Do not add Metrika, Turnstile, Magic UI, or CLAUDE.md
+- Do not commit live API keys, phones, INNs of real winners, or client hostnames
+- Keep LICENSE author Сергей Ноздров
+- Cookie name: radar_session

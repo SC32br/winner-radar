@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Радар заказов</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon-192.png">
+  <link rel="apple-touch-icon" href="/static/favicon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css?v=19">
+</head>
+<body class="dash">
+  <header class="top sticky-top">
+    <div class="brand">
+      <span class="mark">WR</span>
+      <div>
+        <strong>Радар заказов</strong>
+        <span>регионы из config.yaml · с {{ filters.date_from_ru }} · {{ login }}</span>
+      </div>
+    </div>
+    <form method="post" action="/logout">
+      <button type="submit" class="ghost" title="{{ hints.buttons.logout }}">Выйти</button>
+    </form>
+  </header>
+
+  <section class="tiles sticky-filters" aria-label="Сводка" title="{{ hints.headings.tiles }}">
+    <button class="tile" data-tile="all" title="{{ hints.tiles.found }}">
+      <span class="tile-k">Нашли</span>
+      <strong id="tile-found">—</strong>
+    </button>
+    <button class="tile" data-tile="profile" title="{{ hints.tiles.profile }}">
+      <span class="tile-k">Под работы</span>
+      <strong id="tile-profile">—</strong>
+    </button>
+    <button class="tile" data-tile="winner" title="{{ hints.tiles.winner }}">
+      <span class="tile-k">С победителем</span>
+      <strong id="tile-winner">—</strong>
+    </button>
+    <button class="tile" data-tile="no_contact" title="{{ hints.tiles.no_contact }}">
+      <span class="tile-k">Без телефона</span>
+      <strong id="tile-no_contact">—</strong>
+    </button>
+  </section>
+
+  <section class="filter-window" id="filter-window" title="{{ hints.headings.filters }}">
+    <div class="filter-head">
+      <label class="filter-search" title="ИНН заказчика или победителя, название фирмы, предмет, номер контракта">
+        <input type="search" id="f-q" placeholder="ИНН, заказчик, победитель, предмет, номер…" autocomplete="off">
+      </label>
+      <button type="button" class="filter-bar" id="filters-toggle" aria-expanded="false" aria-controls="filters-body" title="{{ hints.buttons.toggle_filters }}">
+        <span class="filter-bar-title">Фильтры</span>
+        <span class="filter-bar-note" id="filters-meta">развернуть</span>
+        <span class="filter-chevron" aria-hidden="true"></span>
+      </button>
+    </div>
+    <div class="filters" id="filters-body">
+    <label title="{{ hints.columns.amount }}">
+      Сумма от, ₽
+      <input type="number" id="f-min" min="0" step="50000" placeholder="без порога">
+    </label>
+    <label title="{{ hints.columns.amount }}">
+      Сумма до, ₽
+      <input type="number" id="f-max" min="0" step="50000" placeholder="без потолка">
+    </label>
+    <label title="Слово, по которому заказ попал в список">
+      Ключ
+      <select id="f-keyword">
+        <option value="">Все</option>
+        {% for group in keyword_groups_ui %}
+        <optgroup label="{{ group.label }}">
+          {% for word in group.words %}
+          <option value="{{ word }}">{{ word }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+    <label title="{{ hints.columns.profile }}">
+      Вид работ
+      <select id="f-profile">
+        <option value="">Все</option>
+        {% for key, label in profile_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label title="{{ hints.columns.status }}">
+      Статус
+      <select id="f-status">
+        <option value="">Все</option>
+        {% for key, label in status_labels.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label title="{{ hints.columns.contact }}">
+      Телефон
+      <select id="f-phone">
+        <option value="">Не важно</option>
+        <option value="1">Есть</option>
+        <option value="0">Нет</option>
+      </select>
+    </label>
+    <label title="{{ hints.columns.source }}">
+      Откуда
+      <select id="f-source">
+        <option value="">Все</option>
+        <option value="eis">Госзакупки</option>
+        <option value="mos">Портал Москвы</option>
+      </select>
+    </label>
+    <label title="44-ФЗ или 223-ФЗ, если указано в карточке">
+      Закон
+      <select id="f-fz">
+        <option value="">Все</option>
+        <option value="44">44-ФЗ</option>
+        <option value="223">223-ФЗ</option>
+      </select>
+    </label>
+    <label title="{{ hints.columns.region }}">
+      Регион
+      <select id="f-region">
+        <option value="">Все</option>
+        {% for item in filters.regions %}
+        <option value="{{ item.code }}">{{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label title="{{ hints.columns.date }}">
+      С даты
+      <input type="date" id="f-from">
+    </label>
+    <label title="{{ hints.columns.date }}">
+      По дату
+      <input type="date" id="f-to">
+    </label>
+    <div class="filter-actions">
+      <button type="button" class="go compact" id="apply" title="{{ hints.buttons.apply_filters }}">Показать</button>
+      <button type="button" class="ghost compact" id="reset" title="{{ hints.buttons.reset_filters }}">Сбросить</button>
+    </div>
+    </div>
+  </section>
+
+  <section class="table-wrap" title="{{ hints.headings.lots }}">
+    <table class="lots">
+      <thead>
+        <tr>
+          <th data-sort="date" aria-sort="descending" title="{{ hints.columns.date }}"><button type="button" class="th-sort" data-sort="date">Дата</button></th>
+          <th title="{{ hints.columns.region }}">Регион</th>
+          <th data-sort="amount" aria-sort="none" title="{{ hints.columns.amount }}"><button type="button" class="th-sort" data-sort="amount">Сумма</button></th>
+          <th title="{{ hints.columns.subject }}">Что за работы</th>
+          <th title="{{ hints.columns.customer }}">Заказчик</th>
+          <th title="{{ hints.columns.winner }}">Победитель</th>
+          <th title="{{ hints.columns.contact }}">Телефон</th>
+          <th data-sort="profile" aria-sort="none" title="{{ hints.columns.profile }}"><button type="button" class="th-sort" data-sort="profile">Вид работ</button></th>
+          <th title="{{ hints.columns.status }}">Статус</th>
+        </tr>
+      </thead>
+      <tbody id="rows">
+        <tr><td colspan="9" class="empty">Загружаем заказы…</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <div class="drawer-bg" id="drawer-bg" hidden></div>
+  <aside class="drawer" id="drawer" hidden>
+    <header class="drawer-top">
+      <div>
+        <p class="eyebrow" title="{{ hints.headings.card }}">Карточка заказа</p>
+        <h2 id="d-subject">—</h2>
+      </div>
+      <button type="button" class="ghost" id="close-card" title="{{ hints.buttons.close_card }}">Закрыть</button>
+    </header>
+    <div class="drawer-body" id="drawer-body"></div>
+  </aside>
+
+  <script id="boot" type="application/json">{{ boot | tojson }}</script>
+  <script src="/static/dashboard.js?v=33" type="module"></script>
+  <p class="ns-credit">
+    <span>Сергей Ноздров</span>
+    <a href="https://github.com/SC32br" rel="noopener">SC32br</a>
+  </p>
+</body>
+</html>

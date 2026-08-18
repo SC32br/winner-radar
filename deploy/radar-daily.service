@@ -1,0 +1,18 @@
+[Unit]
+Description=Радар заказов: утренний сбор ЕИС/mos и полный прогон новых
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=radar
+WorkingDirectory=/opt/winner-radar
+EnvironmentFile=/opt/winner-radar/.env
+ExecStart=/usr/bin/flock -n /opt/winner-radar/data/logs/radar-daily.lock /opt/winner-radar/.venv/bin/python -u -m app.collect --daily
+StandardOutput=append:/opt/winner-radar/data/logs/radar-daily.out
+StandardError=append:/opt/winner-radar/data/logs/radar-daily.out
+Nice=10
+TimeoutStartSec=3h
+
+[Install]
+WantedBy=multi-user.target

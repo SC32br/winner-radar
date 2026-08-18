@@ -1,0 +1,15 @@
+[Unit]
+Description=Радар заказов (Winner Radar dashboard)
+After=network.target
+
+[Service]
+Type=simple
+User=radar
+WorkingDirectory=/opt/winner-radar
+EnvironmentFile=/opt/winner-radar/.env
+ExecStart=/opt/winner-radar/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=4
+
+[Install]
+WantedBy=multi-user.target
